@@ -86,6 +86,7 @@ def extract_name_score(text):
     for block in blocks:
         name = None
         score = None
+        full_score = None
         unanswered = False
 
         for line in block:
@@ -104,6 +105,7 @@ def extract_name_score(text):
             m = re.search(r"(\d+)\s*/\s*(\d+)\s*点?", line)
             if m:
                 score = int(m.group(1))
+                full_score = int(m.group(2))
                 break
 
         if unanswered:
@@ -113,9 +115,16 @@ def extract_name_score(text):
             if score is None:
                 score = 0
 
+            if full_score is None:
+                full_score = 100
+
+            percent_score = score / full_score * 100
+
             results.append({
                 "名前": mask_name(name),
                 "点数": score,
+                "満点": full_score,
+                "グラフ用点数": percent_score,
                 "未回答": unanswered
             })
 
@@ -154,24 +163,32 @@ def make_graph(df, test_name):
 
     answered_df = df[df["未回答"] == False]
 
-    mean = answered_df["点数"].mean()
-    sd = answered_df["点数"].std(ddof=0)
+    mean = answered_df["グラフ用点数"].mean()
+    sd = answered_df["グラフ用点数"].std(ddof=0)
 
     names = df["名前"].tolist() + ["平均"]
-    scores = df["点数"].tolist() + [mean]
+    graph_scores = df["グラフ用点数"].tolist() + [mean]
 
     x = np.arange(len(names))
 
-    fig, ax = plt.subplots(figsize=(max(10, len(names) * 0.45), 6))
+    fig, ax = plt.subplots(
+        figsize=(max(10, len(names) * 0.45), 6)
+    )
 
-    bars = ax.bar(x, scores)
+    colors = ["steelblue"] * len(df) + ["red"]
+
+    bars = ax.bar(
+        x,
+        graph_scores,
+        color=colors
+    )
 
     for i, bar in enumerate(bars):
         height = bar.get_height()
         ax.text(
             bar.get_x() + bar.get_width() / 2,
-            height + 0.2,
-            f"{height:.1f}" if i == len(bars) - 1 else f"{int(height)}",
+            height + 1,
+            f"{height:.1f}",
             ha="center",
             va="bottom",
             fontsize=9
@@ -189,9 +206,26 @@ def make_graph(df, test_name):
         linewidth=1.5
     )
 
-    ax.axhline(mean, color="black", linewidth=1.2, label=f"平均 {mean:.2f}")
-    ax.axhline(mean - sd, color="red", linewidth=1.0, label=f"平均−SD {mean - sd:.2f}")
-    ax.axhline(mean + sd, color="yellow", linewidth=1.0, label=f"平均＋SD {mean + sd:.2f}")
+    ax.axhline(
+        mean,
+        color="black",
+        linewidth=1.2,
+        label=f"平均 {mean:.2f}"
+    )
+
+    ax.axhline(
+        mean - sd,
+        color="red",
+        linewidth=1.0,
+        label=f"平均−SD {mean - sd:.2f}"
+    )
+
+    ax.axhline(
+        mean + sd,
+        color="yellow",
+        linewidth=1.0,
+        label=f"平均＋SD {mean + sd:.2f}"
+    )
 
     ax.text(
         0.02,
@@ -200,18 +234,20 @@ def make_graph(df, test_name):
         transform=ax.transAxes,
         fontsize=12,
         va="top",
-        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8)
+        bbox=dict(
+            boxstyle="round",
+            facecolor="white",
+            alpha=0.8
+        )
     )
 
     ax.set_title(test_name)
-    ax.set_ylabel("点数")
+    ax.set_ylabel("点数（100点換算）")
     ax.set_xticks(x)
     ax.set_xticklabels(names, rotation=90)
+    ax.set_ylim(0, 100)
     ax.legend()
     ax.grid(axis="y", linestyle="--", alpha=0.3)
-
-    ymax = max(scores + [mean + sd]) + 3
-    ax.set_ylim(0, ymax)
 
     fig.tight_layout()
 
@@ -247,8 +283,8 @@ if text:
 
         graph_buffer, mean, sd = make_graph(df, test_name)
 
-        st.write(f"平均：{mean:.2f}")
-        st.write(f"標準偏差：{sd:.2f}")
+        st.write(f"グラフ用平均（100点換算）：{mean:.2f}")
+        st.write(f"グラフ用標準偏差（100点換算）：{sd:.2f}")
 
         st.image(graph_buffer)
 
@@ -256,9 +292,6 @@ if text:
 
         for _, row in df.iterrows():
             output_text += f"{row['名前']},{row['点数']}\n"
-
-        output_text += f"平均,{mean:.2f}\n"
-        output_text += f"標準偏差,{sd:.2f}\n"
 
         st.download_button(
             label="TXTをダウンロード",
